@@ -30,12 +30,142 @@ function App(){
   const [kind,setKind]=useState('Bestie'); const [title,setTitle]=useState('How well do you know me?');
   const [questions,setQuestions]=useState(starter.Bestie.map(x=>({...x,a:[...x.a]})));
   const [quiz,setQuiz]=useState(null); const [name,setName]=useState(''); const [started,setStarted]=useState(false); const [qIndex,setQIndex]=useState(0); const [answers,setAnswers]=useState([]); const [result,setResult]=useState(null); const [newQ,setNewQ]=useState(''); const [opts,setOpts]=useState(['','','','']); const [notice,setNotice]=useState('');
-  const shared=useMemo(()=>readShared(),[]);
+  const [shared, setShared] = useState(null);
+  const [shortUrl, setShortUrl] = useState('');
   const shareText=()=>`I scored ${result?.percent||0}% on “${quiz?.title||title}” on MellowMates 💛 Can you beat my score? ${makeShare(quiz||{kind,title,questions})}`;
-  const openWhatsApp=()=>{const msg=shareText();window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank','noopener,noreferrer');};
+  const createShortUrl = async (data) => {
+  if (shortUrl) return shortUrl;
+
+  const response = await fetch('/api/quiz', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  if (!response.ok) {
+    throw new Error('Could not save quiz');
+  }
+
+  const { id } = await response.json();
+  const url = `${location.origin}/q/${id}`;
+
+  setShortUrl(url);
+  return url;
+};
+
+const share = async () => {
+  try {
+    const data = quiz || {
+      kind,
+      title,
+      questions: questions.filter(
+        x => x.q.trim() && x.a.every(y => y.trim())
+      ).slice(0, 20)
+    };
+
+    const url = await createShortUrl(data);
+
+    const message =
+      `💛 I made a cute ${data.kind || 'Bestie'} quiz on MellowMates!\n\n` +
+      `✨ "${data.title}"\n` +
+      `🥹 Let's see how well you know me!\n\n` +
+      `Take the quiz here 👇\n${url}`;
+
+    if (navigator.share) {
+      await navigator.share({
+        title: `${data.title} 💛`,
+        text: message,
+        url
+      });
+    } else {
+      await navigator.clipboard.writeText(url);
+      setNotice('Quiz link copied! Send it to your favourite human 💌');
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      setNotice('Could not create the link. Please try again 💛');
+    }
+  }
+};
+
+const copyLink = async () => {
+  try {
+    const data = quiz || {
+      kind,
+      title,
+      questions: questions.filter(
+        x => x.q.trim() && x.a.every(y => y.trim())
+      ).slice(0, 20)
+    };
+
+    const url = await createShortUrl(data);
+    await navigator.clipboard.writeText(url);
+    setNotice('Short quiz link copied! 💌');
+  } catch {
+    setNotice('Could not copy the link. Please try again 💛');
+  }
+};
+
+const openWhatsApp = async () => {
+  try {
+    const data = quiz || {
+      kind,
+      title,
+      questions
+    };
+
+    const url = await createShortUrl(data);
+
+    const message =
+      `💛 I just tried "${data.title}" on MellowMates!\n\n` +
+      `👀 Think you know me better? Your turn!\n\n${url}`;
+
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(message)}`,
+      '_blank'
+    );
+  } catch {
+    setNotice('Could not create the WhatsApp link. Please try again 💛');
+  }
+};
   const shareToApp=async(app)=>{const msg=shareText();try{if(navigator.share){await navigator.share({title:'My MellowMates score 💛',text:msg,url:makeShare(quiz||{kind,title,questions})});}else{await navigator.clipboard.writeText(msg);setNotice(`Score copied! Open ${app} and paste it into your story or chat ✨`);}}catch(e){if(e?.name!=='AbortError'){try{await navigator.clipboard.writeText(msg);setNotice(`Copied! Paste your score into ${app} 💌`);}catch{setNotice('Use the Copy score button to share your result.')}}}};
 
-  useEffect(()=>{ if(shared?.questions?.length){ setQuiz(shared); setKind(shared.kind||'Bestie'); setView('play'); setHistory(['home','play']); } },[]);
+  useEffect(() => {
+  const match = location.pathname.match(/^\/q\/([A-Za-z0-9_-]+)\/?$/);
+
+  async function loadQuiz() {
+    try {
+      let data;
+
+      if (match) {
+        const response = await fetch(
+          `/api/quiz?id=${encodeURIComponent(match[1])}`
+        );
+
+        if (!response.ok) throw new Error('Quiz not found');
+
+        data = await response.json();
+      } else {
+        data = readShared();
+      }
+
+      if (data?.questions?.length) {
+        setShared(data);
+        setQuiz(data);
+        setKind(data.kind || 'Bestie');
+        setTitle(data.title || 'How well do you know me?');
+        setView('play');
+        setHistory(['home', 'play']);
+      } else if (match) {
+        setNotice('This quiz link is invalid or expired 💛');
+      }
+    } catch {
+      setNotice('Could not load this quiz. Ask for a fresh link 💛');
+    }
+  }
+
+  loadQuiz();
+}, []);
   useEffect(()=>{ const onPop=()=>{ const route=(location.hash||'').replace('#',''); setView(views.includes(route)?route:(readShared()?'play':'home')); window.scrollTo({top:0,behavior:'smooth'}); }; window.addEventListener('popstate',onPop); return ()=>window.removeEventListener('popstate',onPop); },[]);
   const go=(v)=>{ setHistory(h=>[...h,v]); setView(v); window.history.pushState({view:v},'','#'+v); window.scrollTo({top:0,behavior:'smooth'}); };
   const back=()=>{ if(history.length>1){window.history.back();}else{setView('home');} };
