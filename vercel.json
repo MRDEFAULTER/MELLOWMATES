@@ -1,8 +1,8 @@
-<escape>{
+{
 "rewrites": [
 {
 "source": "/q/:id",
 "destination": "/"
 }
 ]
-}</escape>
+}
